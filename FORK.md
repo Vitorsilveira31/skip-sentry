@@ -16,6 +16,10 @@ so they can be offered back.
 - `SkipSentryOptions.sendURLQueries` (default `true`, the SDKs' own behavior): `false` drops URL query strings and
   fragments from breadcrumbs, event requests and, on iOS, span data.
 - Sentry Android 8.43.0 → 8.65.0.
+- A browser implementation for SwiftUIWeb, in the skip-motion fork's pattern: with `SWIFTUIWEB_EMBEDDED` set (the
+  SwiftUIWeb launcher's Embedded build) the same `SkipSentry` product is `Sources/SkipSentryWeb`, the same public API
+  over a page service (`BrowserService("skip-sentry")`, SwiftUIWeb 0.1.40) and `Web/Resources/skip-sentry.js`, which
+  drives Sentry's browser SDK. See Web/README.md.
 
 ## Syncing with upstream
 
@@ -32,3 +36,4 @@ and note each sync below.
 
 - 2026-11-23: forked at upstream `667c2c9`; `sendURLQueries`; Sentry Android 8.65.0. Tests: 13 on macOS, 12 transpiled
   on Android (Robolectric), all passing.
+- 2026-11-23: browser implementation (Sources/SkipSentryWeb, Web/Resources/skip-sentry.js).
