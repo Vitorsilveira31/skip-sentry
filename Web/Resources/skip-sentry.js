@@ -8,10 +8,21 @@
 // the SDK records and turns off its collection of query strings, headers, cookies, bodies and user details.
 (() => {
   const sdk = () => globalThis.Sentry;
-  const withoutQuery = (url) => (typeof url === "string" ? url.replace(/[?#].*$/, "") : url);
+  // The page's own rule for secrets in URL paths (an invitation token in /convite/<token>, say), from `scrubURL`.
+  let scrubPath = (url) => url;
+  const withoutQuery = (url) => (typeof url === "string" ? scrubPath(url.replace(/[?#].*$/, "")) : url);
   const isURL = (value) => typeof value === "string" && /^(https?:\/\/|\/)/.test(value);
   const withoutQueries = (text) =>
-    typeof text === "string" ? text.replace(/((?:https?:\/\/|\/)[^\s?#]*)[?#][^\s]*/g, "$1") : text;
+    typeof text === "string" ? text.replace(/((?:https?:\/\/|\/)[^\s?#]*)([?#][^\s]*)?/g, (_, url) => scrubPath(url)) : text;
+  // Session Replay's recording events (resource timings of images and videos among them) carry URLs no other hook sees.
+  const scrubValue = (value, depth) => {
+    if (typeof value === "string") return isURL(value) ? withoutQuery(value) : withoutQueries(value);
+    if (depth > 8 || value === null || typeof value !== "object") return value;
+    for (const key of Object.keys(value)) value[key] = scrubValue(value[key], depth + 1);
+    return value;
+  };
+  // rrweb's custom events (type 5) hold Sentry's performance spans and breadcrumbs; DOM snapshots keep the SDK's masking.
+  const scrubRecordingEvent = (event) => (event?.type === 5 ? scrubValue(event, 0) : event);
   const scrubAttributes = (attributes) => {
     if (!attributes) return;
     for (const key of Object.keys(attributes)) {
@@ -63,7 +74,8 @@
     const Sentry = sdk();
     if (!Sentry) throw new Error("Sentry's browser SDK is not loaded (globalThis.Sentry)");
     if (Sentry.getClient()) return "already started";
-    const { sendURLQueries = true, ...rest } = options ?? {};
+    const { sendURLQueries = true, scrubURL, ...rest } = options ?? {};
+    if (typeof scrubURL === "function") scrubPath = (url) => (typeof url === "string" ? scrubURL(url) : url);
     const integrations = rest.integrations ?? (rest.tracesSampleRate != null && Sentry.browserTracingIntegration ? [Sentry.browserTracingIntegration()] : []);
     Sentry.init(sendURLQueries ? { ...rest, integrations } : withoutURLQueries({ ...rest, integrations }));
     // SwiftUIWeb catches a WebAssembly trap or a failed commit itself and announces it with `runtime-error`; its detail
@@ -81,7 +93,9 @@
   }
 
   const parse = (payload) => (payload ? JSON.parse(payload) : {});
-  globalThis.SkipSentryWeb = { start };
+  // `scrubRecordingEvent` is for `Sentry.replayIntegration({ beforeAddRecordingEvent })`: with `sendURLQueries: false`,
+  // replays lose URL queries (and `scrubURL`'s path secrets) like every other payload.
+  globalThis.SkipSentryWeb = { start, scrubRecordingEvent };
   (globalThis.SwiftUIWebServices ??= { queue: [], define(name, factory) { this.queue.push([name, factory]); } })
     .define("skip-sentry", () => ({
       start: (payload) => start(parse(payload)),
