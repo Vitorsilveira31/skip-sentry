@@ -92,9 +92,11 @@
         error.name = type || "Error";
         sdk()?.captureException(error, fingerprint ? { fingerprint } : undefined);
       },
+      // An event rather than `captureMessage`, which attaches a synthetic JavaScript stack whose top frame (this
+      // service) Sentry would then use as the issue's title instead of the message.
       captureMessage(payload) {
         const { message, level, tags, extras, fingerprint } = parse(payload);
-        sdk()?.captureMessage(message, { level, tags, extra: extras, fingerprint: fingerprint?.length ? fingerprint : undefined });
+        sdk()?.captureEvent({ message, level, tags, extra: extras, fingerprint: fingerprint?.length ? fingerprint : undefined });
       },
       log(payload) {
         const { message, level, attributes } = parse(payload);
