@@ -253,6 +253,7 @@ All methods are static on the `SkipSentry` class.
 | `attachStacktrace` | `Bool` | `true` | Attach stack traces to events |
 | `enableAppHangTracking` | `Bool` | `true` | Detect app hangs (iOS only) |
 | `beforeSend` | `((SkipSentryEvent) -> SkipSentryEvent?)?` | `nil` | Inspect each event and drop it (return `nil`) or send it (return the event) |
+| `sendURLQueries` | `Bool` | `true` | `false` keeps only the scheme, host and path of recorded URLs: query strings and fragments are dropped from breadcrumbs, event requests and (iOS) span data. Use it when URLs can carry tokens or signed-URL signatures. |
 
 ### SkipSentryLevel
 

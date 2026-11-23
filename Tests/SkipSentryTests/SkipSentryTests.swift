@@ -128,8 +128,10 @@ final class SkipSentryTests: XCTestCase {
         XCTAssertTrue(opts.enableMetrics)
         XCTAssertNil(opts.tracePropagationTargets)
         XCTAssertTrue(opts.droppedFailedRequestHosts.isEmpty)
+        XCTAssertTrue(opts.sendURLQueries, "query strings go to Sentry unless an app opts out, as the SDKs do")
 
         opts.tracesSampleRate = 0.2
+        opts.sendURLQueries = false
         opts.enableLogs = true
         opts.tracePropagationTargets = ["cloudfunctions.net"]
         opts.droppedFailedRequestHosts = ["cloudfunctions.net"]
@@ -138,6 +140,8 @@ final class SkipSentryTests: XCTestCase {
         XCTAssertTrue(opts.enableLogs)
         XCTAssertEqual(opts.tracePropagationTargets, ["cloudfunctions.net"])
         XCTAssertEqual(opts.droppedFailedRequestHosts, ["cloudfunctions.net"])
+        XCTAssertFalse(opts.sendURLQueries)
+        XCTAssertEqual(SkipSentry.urlDetailKeys, ["http.query", "http.fragment"])
     }
 
     func testSkipSentryLogLevels() throws {
@@ -178,6 +182,12 @@ final class SkipSentryTests: XCTestCase {
         #if !SKIP
         SkipSentry.start { opts in
             opts.debug = true
+        }
+        SkipSentry.close()
+        // The URL-query hooks (beforeBreadcrumb, beforeSendSpan, beforeSend) install without a DSN too.
+        SkipSentry.start { opts in
+            opts.sendURLQueries = false
+            opts.tracesSampleRate = 1.0
         }
         SkipSentry.close()
         #endif
