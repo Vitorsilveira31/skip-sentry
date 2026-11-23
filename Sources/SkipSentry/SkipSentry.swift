@@ -92,8 +92,19 @@ public class SkipSentry {
             options.enableLogs = opts.enableLogs
             options.enableMetrics = opts.enableMetrics
             if let targets = opts.tracePropagationTargets { options.tracePropagationTargets = targets }
+            let sendURLQueries = opts.sendURLQueries
+            if !sendURLQueries {
+                options.beforeBreadcrumb = { breadcrumb in
+                    for key in Self.urlDetailKeys { breadcrumb.data?[key] = nil }
+                    return breadcrumb
+                }
+                options.beforeSendSpan = { span in
+                    for key in Self.urlDetailKeys { span.removeData(key: key) }
+                    return span
+                }
+            }
             let droppedHosts = opts.droppedFailedRequestHosts
-            if !droppedHosts.isEmpty || opts.beforeSend != nil {
+            if !droppedHosts.isEmpty || opts.beforeSend != nil || !sendURLQueries {
                 options.beforeSend = { event in
                     if isDroppedFailedRequest(
                         exceptionType: event.exceptions?.first?.type,
@@ -101,6 +112,10 @@ public class SkipSentry {
                         droppedHosts: droppedHosts
                     ) {
                         return nil
+                    }
+                    if !sendURLQueries {
+                        event.request?.queryString = nil
+                        event.request?.fragment = nil
                     }
                     return Self.applyBeforeSend(opts, event)
                 }
@@ -307,6 +322,11 @@ public class SkipSentry {
         // SKIP INSERT: io.sentry.Sentry.metrics().gauge(key, value, unit, metricParameters(attributes))
         #endif
     }
+
+    // MARK: URL queries
+
+    /// The span and breadcrumb data keys where the SDKs keep the parts of a URL that its sanitized `url` leaves out.
+    static let urlDetailKeys = ["http.query", "http.fragment"]
 
     // MARK: Failed-request filtering
 
@@ -613,6 +633,7 @@ public class SkipSentry {
     private static func initSentryAndroid(opts: SkipSentryOptions) {
         let droppedHosts = opts.droppedFailedRequestHosts
         let hasDroppedHosts = !droppedHosts.isEmpty
+        let sendURLQueries = opts.sendURLQueries
         // SKIP INSERT: SentryAndroid.init(ProcessInfo.processInfo.androidContext) { options ->
         // SKIP INSERT:     options.dsn = opts.dsn
         // SKIP INSERT:     options.isDebug = opts.debug
@@ -628,9 +649,24 @@ public class SkipSentry {
         // SKIP INSERT:     options.logs.isEnabled = opts.enableLogs
         // SKIP INSERT:     options.metrics.isEnabled = opts.enableMetrics
         // SKIP INSERT:     opts.tracePropagationTargets?.let { options.setTracePropagationTargets(it.kotlin(nocopy = true).map { t -> t as String }) }
-        // SKIP INSERT:     if (hasDroppedHosts || opts.beforeSend != null) {
+        // SKIP INSERT:     if (!sendURLQueries) {
+        // SKIP INSERT:         options.setBeforeBreadcrumb { breadcrumb, _ ->
+        // SKIP INSERT:             breadcrumb.removeData("http.query")
+        // SKIP INSERT:             breadcrumb.removeData("http.fragment")
+        // SKIP INSERT:             breadcrumb
+        // SKIP INSERT:         }
+        // SKIP INSERT:     }
+        // SKIP INSERT:     if (hasDroppedHosts || opts.beforeSend != null || !sendURLQueries) {
         // SKIP INSERT:         options.setBeforeSend { event, _ ->
-        // SKIP INSERT:             if (isDroppedFailedRequest(event.exceptions?.firstOrNull()?.type, event.request?.url, droppedHosts)) null else applyBeforeSend(opts, event)
+        // SKIP INSERT:             if (isDroppedFailedRequest(event.exceptions?.firstOrNull()?.type, event.request?.url, droppedHosts)) {
+        // SKIP INSERT:                 null
+        // SKIP INSERT:             } else {
+        // SKIP INSERT:                 if (!sendURLQueries) {
+        // SKIP INSERT:                     event.request?.queryString = null
+        // SKIP INSERT:                     event.request?.fragment = null
+        // SKIP INSERT:                 }
+        // SKIP INSERT:                 applyBeforeSend(opts, event)
+        // SKIP INSERT:             }
         // SKIP INSERT:         }
         // SKIP INSERT:     }
         // SKIP INSERT: }
@@ -680,6 +716,11 @@ public class SkipSentryOptions {
     /// `europe-west1-project.cloudfunctions.net`. Use for endpoints whose failures the app
     /// already reports itself, so Sentry doesn't receive a second, unstructured copy.
     public var droppedFailedRequestHosts: [String] = []
+    /// Whether URL query strings and fragments go to Sentry. A query can carry a token or a signed URL's signature;
+    /// set `false` to keep only the scheme, host and path of every URL the SDK records: breadcrumbs (`http.query`,
+    /// `http.fragment`), the request of an event (`query_string`, `fragment`) and, on iOS, span data. Default `true`
+    /// keeps the SDK's own behavior.
+    public var sendURLQueries: Bool = true
 
     /// A hook invoked for each event just before it is sent to Sentry, letting you
     /// inspect the event and decide whether to drop it (client-side noise filtering).
