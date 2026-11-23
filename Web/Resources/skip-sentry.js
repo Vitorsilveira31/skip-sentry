@@ -27,6 +27,7 @@
       ...options,
       dataCollection: { userInfo: false, cookies: false, httpHeaders: { request: false, response: false }, httpBodies: [], urlQueryParams: false, ...options.dataCollection },
       beforeBreadcrumb: after(options.beforeBreadcrumb, (breadcrumb) => {
+        breadcrumb.message = withoutQueries(breadcrumb.message);
         for (const key of ["url", "from", "to"]) if (breadcrumb.data?.[key]) breadcrumb.data[key] = withoutQuery(breadcrumb.data[key]);
         return breadcrumb;
       }),
@@ -43,7 +44,11 @@
         scrubAttributes(log.attributes);
         return log;
       }),
+      // URLs written into a message or an exception's text lose their queries too.
       beforeSend: after(options.beforeSend, (event) => {
+        if (typeof event.message === "string") event.message = withoutQueries(event.message);
+        if (event.logentry?.message) event.logentry.message = withoutQueries(event.logentry.message);
+        for (const exception of event.exception?.values ?? []) exception.value = withoutQueries(exception.value);
         if (event.request) {
           event.request.url = withoutQuery(event.request.url);
           delete event.request.query_string;
