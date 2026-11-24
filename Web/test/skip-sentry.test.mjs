@@ -45,17 +45,15 @@ test("replay recording events lose signed media queries and keep the words aroun
   expect(SkipSentryWeb.scrubRecordingEvent(consoleCrumb).data.payload.data.arguments[0]).toBe("/api/items failed with 503");
 });
 
-test("replay DOM snapshots lose the queries of URL attributes, and keep the rest", () => {
-  const snapshot = { type: 2, data: { node: { childNodes: [
-    { attributes: { href: "/reset?token=SECRET", class: "link?keep" }, childNodes: [{ textContent: "Reset" }] },
-    { attributes: { srcset: "/a.jpg?sig=SECRET 1x, /b.jpg?sig=SECRET 2x", src: "https://cdn.example/a.jpg?sig=SECRET" } },
-  ] } } };
-  SkipSentryWeb.scrubRecordingEvent(snapshot);
-  const [link, image] = snapshot.data.node.childNodes;
-  expect(link.attributes).toEqual({ href: "/reset", class: "link?keep" });
-  expect(image.attributes).toEqual({ srcset: "/a.jpg 1x, /b.jpg 2x", src: "https://cdn.example/a.jpg" });
-  const mutation = { type: 3, data: { source: 0, adds: [{ node: { attributes: { href: "/convite/SECRET-TOKEN?x" } } }], attributes: [{ id: 4, attributes: { href: "/r?token=SECRET" } }] } };
-  expect(JSON.stringify(SkipSentryWeb.scrubRecordingEvent(mutation))).not.toContain("SECRET");
+test("replayOptions masks the URL attributes whole and scrubs custom events after the page's hook", () => {
+  const seen = [];
+  const options = SkipSentryWeb.replayOptions({ networkDetailAllowUrls: [], maskAttributes: ["title"], beforeAddRecordingEvent: (event) => (seen.push(event.type), event) });
+  expect(options.networkDetailAllowUrls).toEqual([]);
+  expect(options.maskAttributes).toEqual(["title", "href", "src", "srcset", "action", "formaction", "poster", "cite", "data", "background", "xlink:href"]);
+  expect(SkipSentryWeb.replayOptions({}).maskAttributes.slice(0, 3)).toEqual(["title", "placeholder", "aria-label"]);
+  const custom = options.beforeAddRecordingEvent({ type: 5, data: { payload: { description: "https://cdn.example/a.jpg?sig=SECRET" } } });
+  expect(JSON.stringify(custom)).not.toContain("SECRET");
+  expect(seen).toEqual([5]);
 });
 
 test("nesting does not let a URL through: deep strings are scrubbed, objects past the limit replaced", () => {
