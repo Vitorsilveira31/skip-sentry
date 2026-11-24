@@ -7,7 +7,7 @@ so they can be offered back.
 | | |
 |---|---|
 | Upstream | `https://github.com/skiptools/skip-sentry`, remote `upstream` |
-| Based on | upstream `main` at `667c2c9` (0.2.0 plus the fingerprint and logs/metrics/tracing merges) |
+| Based on | upstream `main` at `8d89569` (captureFeedback, merged 2026-11-23) |
 | Sentry Cocoa | `from: "9.8.0"` (resolves to the newest 9.x; 9.35.0 on 2026-11-23) |
 | Sentry Android | `io.sentry:sentry-android:8.65.0` (upstream pins 8.43.0) |
 
