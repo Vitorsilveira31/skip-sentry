@@ -19,7 +19,9 @@ so they can be offered back.
 - A browser implementation for SwiftUIWeb, in the skip-motion fork's pattern: with `SWIFTUIWEB_EMBEDDED` set (the
   SwiftUIWeb launcher's Embedded build) the same `SkipSentry` product is `Sources/SkipSentryWeb`, the same public API
   over a page service (`BrowserService("skip-sentry")`, SwiftUIWeb 0.1.40) and `Web/Resources/skip-sentry.js`, which
-  drives Sentry's browser SDK. See Web/README.md.
+  drives Sentry's browser SDK. `Web/Resources` also ships that SDK (two CDN bundles of @sentry/browser 11.16.0) and a
+  `head.html`; SwiftUIWeb copies a local package's browser files into the application, so applications keep no copies.
+  See Web/README.md.
 
 ## Syncing with upstream
 
@@ -37,3 +39,5 @@ and note each sync below.
 - 2026-11-23: forked at upstream `667c2c9`; `sendURLQueries`; Sentry Android 8.65.0. Tests: 13 on macOS, 12 transpiled
   on Android (Robolectric), all passing.
 - 2026-11-23: browser implementation (Sources/SkipSentryWeb, Web/Resources/skip-sentry.js).
+- 2026-11-23: synced with upstream `8d89569` (captureFeedback, the User Feedback API), also in the browser target.
+  Tests: 13 on macOS, 12 transpiled on Android (Robolectric), 10 for the browser service (`cd Web && bun test`).
