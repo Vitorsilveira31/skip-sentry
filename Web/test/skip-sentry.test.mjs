@@ -6,9 +6,13 @@ let client = null;
 const processors = [];
 const cleared = [];
 const calls = [];
+const spanEndHandlers = [];
+const renamed = [];
 globalThis.Sentry = {
   getClient: () => client,
-  init: (options) => { initOptions = options; },
+  init: (options) => { initOptions = options; client = { on: (name, handler) => name === "spanEnd" && spanEndHandlers.push(handler) }; },
+  spanToJSON: (span) => ({ description: span.name }),
+  updateSpanName: (span, name) => { renamed.push(name); span.name = name; },
   browserTracingIntegration: () => ({}),
   addEventProcessor: (processor) => processors.push(processor),
   withStaticSpan: (callback) => Object.assign(callback, { _static: true }),
@@ -22,11 +26,23 @@ await import("../Resources/skip-sentry.js");
 const scrubURL = (url) => url.replace(/(\/convite\/)[^/?#\s]+/g, "$1[token]");
 SkipSentryWeb.start({ dsn: "https://k@o0.ingest.sentry.io/1", sendURLQueries: false, scrubURL });
 const streamed = initOptions;
+client = null;
 
 test("a request URL loses its query and the path secret the page names", () => {
   const event = streamed.beforeSend({ request: { url: "https://bo.example/convite/SECRET-TOKEN?x=1", query_string: "x=1" } });
   expect(event.request.url).toBe("https://bo.example/convite/[token]");
   expect(event.request.query_string).toBeUndefined();
+});
+
+test("stack frame files lose their queries, and a span renamed late ends with a clean name", () => {
+  const event = streamed.beforeSend({ exception: { values: [{ value: "boom", stacktrace: { frames: [{ filename: "https://example.test/app.js?token=SECRET", abs_path: "https://example.test/app.js?token=SECRET" }] } }] } });
+  expect(JSON.stringify(event)).not.toContain("SECRET");
+  const root = { name: "GET /convite/SECRET-TOKEN?sig=SECRET" };
+  for (const handler of spanEndHandlers) handler(root);
+  expect(root.name).toBe("GET /convite/[token]");
+  const plain = { name: "pageload /obras" };
+  for (const handler of spanEndHandlers) handler(plain);
+  expect(renamed).toEqual(["GET /convite/[token]"]);
 });
 
 test("span names, attributes and breadcrumbs lose both", () => {
@@ -74,6 +90,7 @@ test("the replay event's page URLs lose queries and the path secret", () => {
 
 test("an asynchronous beforeSend is awaited before the scrubbing, and its null still drops the event", async () => {
   SkipSentryWeb.start({ dsn: "https://k@o0.ingest.sentry.io/1", sendURLQueries: false, scrubURL, beforeSend: async (event) => (event.drop ? null : event) });
+  client = null;
   const kept = await initOptions.beforeSend({ message: "GET https://example.test/reset?token=secret" });
   expect(kept.message).toBe("GET https://example.test/reset");
   expect(await initOptions.beforeSend({ drop: true })).toBeNull();
@@ -81,6 +98,7 @@ test("an asynchronous beforeSend is awaited before the scrubbing, and its null s
 
 test("the static lifecycle runs the marked span callback and scrubs transactions", () => {
   SkipSentryWeb.start({ dsn: "https://k@o0.ingest.sentry.io/1", sendURLQueries: false, scrubURL, traceLifecycle: "static" });
+  client = null;
   expect(initOptions.beforeSendSpan._static).toBe(true);
   expect(initOptions.beforeSendSpan({ description: "GET https://example.test/reset?token=secret", data: {} }).description).toBe("GET https://example.test/reset");
   const transaction = initOptions.beforeSendTransaction({

@@ -107,7 +107,14 @@
       beforeSend: after(options.beforeSend, (event) => {
         if (typeof event.message === "string") event.message = withoutQueries(event.message);
         if (event.logentry?.message) event.logentry.message = withoutQueries(event.logentry.message);
-        for (const exception of event.exception?.values ?? []) exception.value = withoutQueries(exception.value);
+        for (const exception of event.exception?.values ?? []) {
+          exception.value = withoutQueries(exception.value);
+          // A frame's file is the script's URL as the stack wrote it, query included.
+          for (const frame of exception.stacktrace?.frames ?? []) {
+            frame.filename = withoutQuery(frame.filename);
+            frame.abs_path = withoutQuery(frame.abs_path);
+          }
+        }
         scrubRequest(event.request);
         return event;
       }),
@@ -130,6 +137,17 @@
     if (typeof scrubURL === "function") scrubPath = (url) => (typeof url === "string" ? scrubURL(url) : url);
     const integrations = rest.integrations ?? (rest.tracesSampleRate != null && Sentry.browserTracingIntegration ? [Sentry.browserTracingIntegration()] : []);
     Sentry.init(sendURLQueries ? { ...rest, integrations } : withoutURLQueries({ ...rest, integrations }, Sentry));
+    // The span buffer gives a segment its root span's latest name when it flushes, after beforeSendSpan ran: names lose
+    // their queries as each span ends, so a late rename carries a clean one.
+    const started = Sentry.getClient?.();
+    if (!sendURLQueries && typeof started?.on === "function" && typeof Sentry.spanToJSON === "function" && typeof Sentry.updateSpanName === "function") {
+      started.on("spanEnd", (span) => {
+        const name = Sentry.spanToJSON(span)?.description;
+        if (typeof name !== "string") return;
+        const clean = withoutQueries(name);
+        if (clean !== name) Sentry.updateSpanName(span, clean);
+      });
+    }
     // Session Replay's own event lists the page URLs the replay saw (`urls`): the same policy applies to them.
     if (!sendURLQueries && typeof Sentry.addEventProcessor === "function") {
       Sentry.addEventProcessor((event) => {
