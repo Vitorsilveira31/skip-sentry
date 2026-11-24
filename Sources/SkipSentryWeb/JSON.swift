@@ -44,16 +44,18 @@ enum JSON {
         return out + "\""
     }
 
-    /// A finite number with up to six decimals (sample rates, timeouts, metric values); `null` otherwise.
+    /// A finite number as its IEEE-754 bit pattern, `{"$f64":"<16 hex digits>"}`, which Web/Resources/skip-sentry.js
+    /// turns back into the same `Double` (sample rates, timeouts, metric values of any size): the browser build does not
+    /// print floating-point numbers exactly. `null` for a non-finite number.
     static func number(_ value: Double) -> String {
-        guard value.isFinite, value.magnitude < 9_000_000_000 else { return "null" }
-        let scaled = Int64((value.magnitude * 1_000_000).rounded())
-        var fraction = String(scaled % 1_000_000)
-        while fraction.count < 6 { fraction = "0" + fraction }
-        while fraction.hasSuffix("0") { fraction.removeLast() }
-        let integer = String(scaled / 1_000_000)
-        let sign = value < 0 && scaled != 0 ? "-" : ""
-        return fraction.isEmpty ? sign + integer : sign + integer + "." + fraction
+        guard value.isFinite else { return "null" }
+        var bits = value.bitPattern
+        var digits = ""
+        for _ in 0 ..< 16 {
+            digits = hex(UInt8(bits & 0xF)) + digits
+            bits >>= 4
+        }
+        return "{\"$f64\":\"" + digits + "\"}"
     }
 
     private static func hex(_ nibble: UInt8) -> String {

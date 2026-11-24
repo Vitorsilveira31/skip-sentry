@@ -27,10 +27,13 @@ public enum SkipSentryLogLevel: String {
 /// Cross-platform Sentry facade; see the native implementation for the documentation of each call. Browser specifics:
 /// `beforeSend` is not called (the browser SDK filters in JavaScript), `capture(error:)` carries a generic description
 /// (the browser build has no reflection to describe an arbitrary error; prefer `capture(message:level:tags:extras:fingerprint:)`
-/// for context), `crashedLastRun` is `nil`, and `flush` does not wait.
+/// for context), `crashedLastRun` is `nil`, and `flush` does not wait. `isEnabled` is the page SDK's own answer, which
+/// arrives asynchronously: `false` until the page has answered once, after a start or on first use.
 public class SkipSentry {
     private static let service = BrowserService("skip-sentry")
-    nonisolated(unsafe) private static var started = false
+    /// Whether the page's SDK has a client, as it last answered (nil before it answered).
+    nonisolated(unsafe) private static var enabled: Bool?
+    nonisolated(unsafe) private static var asking = false
 
     public static func start(dsn: String? = nil, debug: Bool = false) {
         start { options in
@@ -40,18 +43,31 @@ public class SkipSentry {
     }
 
     /// Starts the browser SDK unless the page already did (an early start in the page catches the errors that happen
-    /// before the app runs; see Web/README.md): then only the scope set here (environment, release) is applied.
+    /// before the app runs; see Web/README.md): then only the environment and release set here are applied.
     public static func start(configure: @escaping (SkipSentryOptions) -> Void) {
         let options = SkipSentryOptions()
         configure(options)
-        started = options.dsn != nil
-        service.send("start", options.json)
+        _ = service.call("start", options.json) { result in
+            switch result {
+            case let .success(answer): enabled = answer == "started" || answer == "already started"
+            case .failure: enabled = false
+            }
+        }
     }
 
-    public static var isEnabled: Bool { started }
+    public static var isEnabled: Bool {
+        if enabled == nil, !asking {
+            asking = true
+            _ = service.call("isEnabled") { result in
+                asking = false
+                if case let .success(answer) = result { enabled = answer == "true" }
+            }
+        }
+        return enabled ?? false
+    }
 
     public static func close() {
-        started = false
+        enabled = false
         service.send("close")
     }
 

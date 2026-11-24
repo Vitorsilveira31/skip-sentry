@@ -21,15 +21,18 @@ An application:
    SkipSentryWeb.start({ dsn, environment: "production", tracesSampleRate: 0.1, sendURLQueries: false });
    ```
 
-   or from Swift with `SkipSentry.start { … }`. Only the first start initializes the SDK.
+   or from Swift with `SkipSentry.start { … }`. Only the first start initializes the SDK; a later one applies its
+   `environment` and `release` to the events after it.
 4. Allows the DSN's host in `connect-src` if its Content-Security-Policy restricts it.
 
 `sendURLQueries: false` keeps only the path of the URLs the SDK records (and `scrubURL: (url) => …` lets the page redact secrets that live in paths, such as an invitation token) and turns off its collection of query strings,
 headers, cookies, bodies and user details. SwiftUIWeb's `runtime-error` event (a WebAssembly trap it catches) is
 reported as an unhandled `SwiftUIWebRuntimeError` with the trap's Swift frames. With Session Replay, pass
 `beforeAddRecordingEvent: SkipSentryWeb.scrubRecordingEvent` to `replayIntegration` so recordings (resource timings of
-images and videos) lose URL queries too. `bun test Web/test` checks the scrubbing against a stand-in SDK.
+images and videos) lose URL queries too. `cd Web && bun test` checks the scrubbing and the calls against a stand-in SDK.
 
 Browser differences: `beforeSend` is not called (filter in the page's `start` options), `capture(error:)` carries a
 generic description (no reflection in Embedded Swift; use `capture(message:level:tags:extras:fingerprint:)` for
-context), `crashedLastRun` is `nil` and `flush` does not wait.
+context), `crashedLastRun` is `nil`, `flush` does not wait, and `isEnabled` is the page SDK's own answer, `false` until
+it has arrived (after a start, or shortly after the first read). Numbers go to the page as their bit patterns, so a
+metric of any size arrives exactly.
