@@ -97,6 +97,18 @@ public class SkipSentry {
         ]))
     }
 
+    // MARK: User Feedback
+
+    /// Sends user feedback (Sentry's User Feedback feature) through the browser SDK's `captureFeedback`; the same call as
+    /// the native one. `associatedEventId` links it to an event (32 hex characters).
+    public static func captureFeedback(message: String, name: String? = nil, email: String? = nil, associatedEventId: String? = nil) {
+        var fields = [JSONField("message", message)]
+        if let name { fields.append(JSONField("name", name)) }
+        if let email { fields.append(JSONField("email", email)) }
+        if let associatedEventId { fields.append(JSONField("associatedEventId", associatedEventId)) }
+        service.send("captureFeedback", JSON.object(fields))
+    }
+
     public static func log(_ message: String, level: SkipSentryLogLevel, attributes: [String: String] = [:]) {
         service.send("log", JSON.object([JSONField("message", message), JSONField("level", level.rawValue), JSONField("attributes", attributes)]))
     }

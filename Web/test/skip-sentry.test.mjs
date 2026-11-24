@@ -123,4 +123,8 @@ test("numbers from Swift arrive exactly, and breadcrumbs are cleared on the isol
   expect(events[0].extra).toEqual({ value: "4202a05f20000000" });
   service.clearBreadcrumbs();
   expect(cleared).toEqual(["isolation", "current"]);
+  const feedback = [];
+  Sentry.captureFeedback = (value) => feedback.push(value);
+  service.captureFeedback(JSON.stringify({ message: "O vídeo travou", email: "leitor@example.test", associatedEventId: "0123456789abcdef0123456789abcdef" }));
+  expect(feedback).toEqual([{ message: "O vídeo travou", name: undefined, email: "leitor@example.test", associatedEventId: "0123456789abcdef0123456789abcdef" }]);
 });

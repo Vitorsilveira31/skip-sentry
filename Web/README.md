@@ -4,15 +4,22 @@ With SwiftUIWeb's Embedded build (`SWIFTUIWEB_EMBEDDED`), `import SkipSentry` re
 same public API, sent as fire-and-forget calls to the page service in `Resources/skip-sentry.js`, which drives Sentry's
 browser SDK (`globalThis.Sentry`).
 
+The browser files ship with this package, in `Web/Resources/`: `skip-sentry.js`, Sentry's own SDK as two of its CDN
+bundles (@sentry/browser 11.16.0, as published on `browser.sentry-cdn.com`): `sentry.tracing.js`
+(`bundle.tracing.logs.metrics.min.js`) and `sentry.tracing.replay.js` (`bundle.tracing.replay.logs.metrics.min.js`, with
+Session Replay), and `head.html`, which loads `skip-sentry.js`, deferred. SwiftUIWeb's browser build copies a local
+package dependency's `Web/Resources/` into the application's bundle and puts its `head.html` before the application's,
+so an application keeps no copies.
+
 An application:
 
-1. Copies Sentry's CDN bundle (for example `bundle.tracing.logs.metrics.min.js` from `browser.sentry-cdn.com`, version
-   pinned) and `Resources/skip-sentry.js` into its own `Web/Resources`, so `script-src 'self'` allows them.
-2. Loads both from `head.html`, deferred, before the app starts:
+1. Depends on this package through a local path in its browser manifest (`.package(path: "../skip-sentry")`).
+2. Loads the SDK bundle it needs from its own `head.html`, deferred, before the script that starts it (the package's
+   fragment comes first, so `SkipSentryWeb` exists by then):
 
    ```html
-   <script defer src="./sentry.js"></script>
-   <script defer src="./skip-sentry.js"></script>
+   <script defer src="./sentry.tracing.js"></script>
+   <script defer src="./sentry-init.js"></script>
    ```
 
 3. Starts the SDK either from the page, which also catches the errors that happen before the app runs:

@@ -1,0 +1,4 @@
+<!-- SkipSentry: the page service behind Sources/SkipSentryWeb (SkipSentryWeb.start for the page). Sentry's own browser
+     SDK is next to it, @sentry/browser 11.16.0 from Sentry's CDN: the application's head loads the bundle it needs,
+     sentry.tracing.js (tracing, logs, metrics) or sentry.tracing.replay.js (with Session Replay), and then its start. -->
+<script defer src="./skip-sentry.js"></script>

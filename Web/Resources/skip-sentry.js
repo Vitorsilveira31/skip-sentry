@@ -214,6 +214,10 @@
         const { message, level, tags, extras, fingerprint } = parse(payload);
         sdk()?.captureEvent({ message, level, tags, extra: extras, fingerprint: fingerprint?.length ? fingerprint : undefined });
       },
+      captureFeedback(payload) {
+        const { message, name, email, associatedEventId } = parse(payload);
+        sdk()?.captureFeedback?.({ message, name, email, associatedEventId });
+      },
       log(payload) {
         const { message, level, attributes } = parse(payload);
         sdk()?.logger?.[level]?.(message, attributes);
