@@ -5,7 +5,8 @@
 // `SkipSentryWeb.start(options)` starts the SDK once: call it from the page to catch the errors that happen before the
 // app runs, or let Swift's `SkipSentry.start` do it. A later start never initializes the SDK again; it only applies its
 // `environment` and `release` to the events sent after it. Options are Sentry's own plus `sendURLQueries: false`, which
-// keeps only the path of every URL the SDK records (also in transactions, spans, logs and Session Replay) and turns off
+// keeps only the path of every URL the SDK records (also in transactions, spans, logs, and Session Replay's events,
+// metadata and the URL attributes of its DOM snapshots: href, src, srcset, ...) and turns off
 // its collection of query strings, headers, cookies, bodies and user details, and `scrubURL`, the page's rule for
 // secrets in URL paths.
 (() => {
@@ -31,8 +32,40 @@
     for (const key of Object.keys(value)) value[key] = scrubValue(value[key], depth + 1, seen);
     return value;
   };
-  // rrweb's custom events (type 5) hold Sentry's performance spans and breadcrumbs; DOM snapshots keep the SDK's masking.
-  const scrubRecordingEvent = (event) => (event?.type === 5 ? scrubValue(event, 0, new WeakSet()) : event);
+  // DOM snapshots (rrweb types 2 and 3) keep the SDK's text masking, but Replay masks no `href` or `src`: the URL
+  // attributes of every recorded element lose their queries (each candidate of a srcset too). Text content is left.
+  const URL_ATTRIBUTES = new Set(["href", "src", "srcset", "action", "formaction", "poster", "cite", "data", "background", "xlink:href"]);
+  const scrubURLAttribute = (name, value) =>
+    name === "srcset"
+      ? value.split(",").map((candidate) => { const [url, ...descriptor] = candidate.trim().split(/\s+/); return [withoutQuery(url), ...descriptor].join(" "); }).join(", ")
+      : scrubText(value);
+  const scrubElementAttributes = (attributes) => {
+    if (!attributes || typeof attributes !== "object") return;
+    for (const name of Object.keys(attributes)) {
+      if (typeof attributes[name] === "string" && URL_ATTRIBUTES.has(name.toLowerCase())) attributes[name] = scrubURLAttribute(name.toLowerCase(), attributes[name]);
+    }
+  };
+  const scrubNodes = (root) => {
+    const stack = root ? [root] : [];
+    while (stack.length) {
+      const node = stack.pop();
+      if (!node || typeof node !== "object") continue;
+      scrubElementAttributes(node.attributes);
+      if (Array.isArray(node.childNodes)) stack.push(...node.childNodes);
+    }
+  };
+  const scrubSnapshot = (event) => {
+    if (event.type === 2) scrubNodes(event.data?.node);
+    // An incremental mutation (source 0): the nodes it adds and the attributes it changes.
+    else if (event.data?.source === 0) {
+      for (const added of event.data.adds ?? []) scrubNodes(added?.node);
+      for (const change of event.data.attributes ?? []) scrubElementAttributes(change?.attributes);
+    }
+    return event;
+  };
+  // rrweb's custom events (type 5) hold Sentry's performance spans and breadcrumbs, its snapshots (2 and 3) the DOM.
+  const scrubRecordingEvent = (event) =>
+    event?.type === 5 ? scrubValue(event, 0, new WeakSet()) : event?.type === 2 || event?.type === 3 ? scrubSnapshot(event) : event;
   const scrubAttributes = (attributes) => {
     if (!attributes) return;
     for (const key of Object.keys(attributes)) {
@@ -143,13 +176,18 @@
   }
 
   // Swift sends each Double as its bit pattern (Sources/SkipSentryWeb/JSON.swift), so no value is rounded on the way.
+  // Only the fields Swift fills with a Double are read that way: a dictionary of the app's own (tags, extras,
+  // attributes) that happens to look like a marker stays as it is.
+  const NUMERIC_FIELDS = new Set(["value", "timeout", "sampleRate", "tracesSampleRate", "profilesSampleRate", "replaysSessionSampleRate", "replaysOnErrorSampleRate"]);
   const f64 = (hex) => {
     const view = new DataView(new ArrayBuffer(8));
     view.setBigUint64(0, BigInt(`0x${hex}`));
     return view.getFloat64(0);
   };
   const exact = (key, value) =>
-    value && typeof value === "object" && typeof value.$f64 === "string" && Object.keys(value).length === 1 ? f64(value.$f64) : value;
+    NUMERIC_FIELDS.has(key) && value && typeof value === "object" && Object.keys(value).length === 1 && /^[0-9a-f]{16}$/.test(value.$f64)
+      ? f64(value.$f64)
+      : value;
   const parse = (payload) => (payload ? JSON.parse(payload, exact) : {});
   // `scrubRecordingEvent` is for `Sentry.replayIntegration({ beforeAddRecordingEvent })`: with `sendURLQueries: false`,
   // replays lose URL queries (and `scrubURL`'s path secrets) like every other payload.
@@ -157,7 +195,12 @@
   (globalThis.SwiftUIWebServices ??= { queue: [], define(name, factory) { this.queue.push([name, factory]); } })
     .define("skip-sentry", () => ({
       start: (payload) => start(parse(payload)),
-      isEnabled: () => (sdk()?.getClient?.() ? "true" : "false"),
+      // The SDK's own answer (its `enabled` option and a transport), not only whether a client exists.
+      isEnabled: () => {
+        const Sentry = sdk();
+        const enabled = typeof Sentry?.isEnabled === "function" ? Sentry.isEnabled() : !!Sentry?.getClient?.();
+        return enabled ? "true" : "false";
+      },
       close: () => sdk()?.close(),
       captureException(payload) {
         const { type, value, fingerprint } = parse(payload);

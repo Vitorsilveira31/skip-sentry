@@ -43,8 +43,19 @@ test("replay recording events lose signed media queries and keep the words aroun
   expect(JSON.stringify(SkipSentryWeb.scrubRecordingEvent(recording))).not.toContain("SECRET");
   const consoleCrumb = { type: 5, data: { payload: { data: { arguments: ["/api/items?sig=SECRET failed with 503"] } } } };
   expect(SkipSentryWeb.scrubRecordingEvent(consoleCrumb).data.payload.data.arguments[0]).toBe("/api/items failed with 503");
-  const snapshot = { type: 2, data: { node: { attributes: { href: "/keep?x" } } } };
-  expect(SkipSentryWeb.scrubRecordingEvent(snapshot)).toBe(snapshot);
+});
+
+test("replay DOM snapshots lose the queries of URL attributes, and keep the rest", () => {
+  const snapshot = { type: 2, data: { node: { childNodes: [
+    { attributes: { href: "/reset?token=SECRET", class: "link?keep" }, childNodes: [{ textContent: "Reset" }] },
+    { attributes: { srcset: "/a.jpg?sig=SECRET 1x, /b.jpg?sig=SECRET 2x", src: "https://cdn.example/a.jpg?sig=SECRET" } },
+  ] } } };
+  SkipSentryWeb.scrubRecordingEvent(snapshot);
+  const [link, image] = snapshot.data.node.childNodes;
+  expect(link.attributes).toEqual({ href: "/reset", class: "link?keep" });
+  expect(image.attributes).toEqual({ srcset: "/a.jpg 1x, /b.jpg 2x", src: "https://cdn.example/a.jpg" });
+  const mutation = { type: 3, data: { source: 0, adds: [{ node: { attributes: { href: "/convite/SECRET-TOKEN?x" } } }], attributes: [{ id: 4, attributes: { href: "/r?token=SECRET" } }] } };
+  expect(JSON.stringify(SkipSentryWeb.scrubRecordingEvent(mutation))).not.toContain("SECRET");
 });
 
 test("nesting does not let a URL through: deep strings are scrubbed, objects past the limit replaced", () => {
@@ -92,12 +103,24 @@ test("a later start applies its environment and release, and does not initialize
   expect(service.isEnabled()).toBe("true");
   client = null;
   expect(service.isEnabled()).toBe("false");
+  // A client started with `enabled: false`: the SDK's own predicate decides.
+  client = { getOptions: () => ({}) };
+  Sentry.isEnabled = () => false;
+  expect(service.isEnabled()).toBe("false");
+  delete Sentry.isEnabled;
+  client = null;
 });
 
 test("numbers from Swift arrive exactly, and breadcrumbs are cleared on the isolation scope", () => {
   service.metric(JSON.stringify({ kind: "gauge", key: "bytes", value: { $f64: "4202a05f20000000" } }));
   service.metric(JSON.stringify({ kind: "gauge", key: "tiny", value: { $f64: "3e7ad7f29abcaf48" } }));
   expect(calls).toEqual([["gauge", "bytes", 10_000_000_000], ["gauge", "tiny", 1e-7]]);
+  // An app dictionary shaped like a marker is not a number (and does not break the call).
+  const events = [];
+  Sentry.captureEvent = (event) => events.push(event);
+  service.captureMessage(JSON.stringify({ message: "m", level: "info", tags: { $f64: "not-hex" }, extras: { value: "4202a05f20000000" } }));
+  expect(events[0].tags).toEqual({ $f64: "not-hex" });
+  expect(events[0].extra).toEqual({ value: "4202a05f20000000" });
   service.clearBreadcrumbs();
   expect(cleared).toEqual(["isolation", "current"]);
 });

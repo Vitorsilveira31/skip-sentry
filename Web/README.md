@@ -28,8 +28,10 @@ An application:
 `sendURLQueries: false` keeps only the path of the URLs the SDK records (and `scrubURL: (url) => …` lets the page redact secrets that live in paths, such as an invitation token) and turns off its collection of query strings,
 headers, cookies, bodies and user details. SwiftUIWeb's `runtime-error` event (a WebAssembly trap it catches) is
 reported as an unhandled `SwiftUIWebRuntimeError` with the trap's Swift frames. With Session Replay, pass
-`beforeAddRecordingEvent: SkipSentryWeb.scrubRecordingEvent` to `replayIntegration` so recordings (resource timings of
-images and videos) lose URL queries too. `cd Web && bun test` checks the scrubbing and the calls against a stand-in SDK.
+`beforeAddRecordingEvent: SkipSentryWeb.scrubRecordingEvent` to `replayIntegration` so recordings lose URL queries too:
+resource timings of images and videos, console arguments, and the URL attributes of the DOM snapshots (`href`, `src`,
+`srcset`, `action`, `poster`, ...). With `sendURLQueries: false` the replay's own list of page URLs follows the same
+policy. Text in the page keeps Replay's own masking. `cd Web && bun test` checks the scrubbing and the calls against a stand-in SDK.
 
 Browser differences: `beforeSend` is not called (filter in the page's `start` options), `capture(error:)` carries a
 generic description (no reflection in Embedded Swift; use `capture(message:level:tags:extras:fingerprint:)` for

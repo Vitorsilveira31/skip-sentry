@@ -31,9 +31,11 @@ public enum SkipSentryLogLevel: String {
 /// arrives asynchronously: `false` until the page has answered once, after a start or on first use.
 public class SkipSentry {
     private static let service = BrowserService("skip-sentry")
-    /// Whether the page's SDK has a client, as it last answered (nil before it answered).
+    /// Whether the page's SDK is enabled, as it last answered (nil before it answered).
     nonisolated(unsafe) private static var enabled: Bool?
     nonisolated(unsafe) private static var asking = false
+    /// Bumped by `start` and `close`: an answer to an earlier request is ignored.
+    nonisolated(unsafe) private static var generation = 0
 
     public static func start(dsn: String? = nil, debug: Bool = false) {
         start { options in
@@ -47,27 +49,34 @@ public class SkipSentry {
     public static func start(configure: @escaping (SkipSentryOptions) -> Void) {
         let options = SkipSentryOptions()
         configure(options)
-        _ = service.call("start", options.json) { result in
-            switch result {
-            case let .success(answer): enabled = answer == "started" || answer == "already started"
-            case .failure: enabled = false
-            }
+        generation += 1
+        enabled = nil
+        let asked = generation
+        // Then ask the SDK itself: a start may leave it disabled (`enabled: false`, no transport).
+        _ = service.call("start", options.json) { _ in
+            if asked == generation { askEnabled() }
         }
     }
 
     public static var isEnabled: Bool {
-        if enabled == nil, !asking {
-            asking = true
-            _ = service.call("isEnabled") { result in
-                asking = false
-                if case let .success(answer) = result { enabled = answer == "true" }
-            }
-        }
+        if enabled == nil, !asking { askEnabled() }
         return enabled ?? false
     }
 
+    private static func askEnabled() {
+        asking = true
+        let asked = generation
+        _ = service.call("isEnabled") { result in
+            guard asked == generation else { return }
+            asking = false
+            if case let .success(answer) = result { enabled = answer == "true" } else { enabled = false }
+        }
+    }
+
     public static func close() {
+        generation += 1
         enabled = false
+        asking = false
         service.send("close")
     }
 
